@@ -1,17 +1,33 @@
-// レシピデータを変数に格納
+// 設定とレシピデータを格納
+let config = { debug: false };
 let recipes = [];
 let categories = {};
-// 表示中のレシピを保持する配列
 let displayedRecipes = [];
+
+// 設定を読み込む
+async function loadConfig() {
+  try {
+    const response = await fetch('config.json');
+    config = await response.json();
+  } catch (error) {
+    console.error('設定読み込みエラー:', error);
+  }
+}
+
+// デバッグログ出力
+function debugLog(message) {
+  if (config.debug) {
+    const debugElement = document.getElementById("debugInfo");
+    if (debugElement) {
+      debugElement.innerHTML += `<p>${message}</p>`;
+    }
+  }
+}
 
 // Googleスプレッドシートからデータを読み込む関数
 function loadRecipesFromSpreadsheet() {
   return new Promise((resolve, reject) => {
-    // デバッグ情報を表示エリアに追加
-    const debugElement = document.getElementById("debugInfo");
-    if (debugElement) {
-      debugElement.innerHTML += `<p>Googleスプレッドシートからデータを読み込み中...</p>`;
-    }
+    debugLog('Googleスプレッドシートからデータを読み込み中...');
 
     // ローディングステータスを更新
     const loadingElement = document.getElementById("loadingStatus");
@@ -72,10 +88,7 @@ function loadRecipesFromSpreadsheet() {
             };
           });
 
-          if (debugElement) {
-            debugElement.innerHTML += `<p>読み込み成功: ${recipes.length}件のレシピを読み込みました</p>`;
-          }
-
+          debugLog(`読み込み成功: ${recipes.length}件のレシピを読み込みました`);
           resolve(recipes);
         } else {
           throw new Error(
@@ -85,9 +98,7 @@ function loadRecipesFromSpreadsheet() {
       })
       .catch((error) => {
         console.error("Error loading spreadsheet data:", error);
-        if (debugElement) {
-          debugElement.innerHTML += `<p>エラー: ${error.message}</p>`;
-        }
+        debugLog(`エラー: ${error.message}`, 'error');
         reject(error);
       });
   });
@@ -95,6 +106,8 @@ function loadRecipesFromSpreadsheet() {
 
 // ページ読み込み時にデータを処理
 window.onload = async function () {
+  // 設定を読み込む
+  await loadConfig();
   // レシピコンテンツエリアを取得
   const recipeContentElement = document.getElementById("recipeContent");
   if (!recipeContentElement) {
@@ -111,24 +124,26 @@ window.onload = async function () {
   loadingElement.textContent = "レシピデータを読み込み中...";
   recipeContentElement.appendChild(loadingElement);
 
-  // デバッグ情報表示エリアを作成
-  const debugElement = document.createElement("div");
-  debugElement.id = "debugInfo";
-  debugElement.style.border = "1px solid #ccc";
-  debugElement.style.padding = "10px";
-  debugElement.style.margin = "10px 0";
-  debugElement.style.backgroundColor = "#f9f9f9";
-  debugElement.style.maxHeight = "200px";
-  debugElement.style.overflow = "auto";
-  debugElement.innerHTML = "<h3>デバッグ情報</h3>";
-  recipeContentElement.appendChild(debugElement);
+  // デバッグ情報表示エリアを作成 (debugモード時のみ表示)
+  if (config.debug) {
+    const debugElement = document.createElement("div");
+    debugElement.id = "debugInfo";
+    debugElement.style.border = "1px solid #ccc";
+    debugElement.style.padding = "10px";
+    debugElement.style.margin = "10px 0";
+    debugElement.style.backgroundColor = "#f9f9f9";
+    debugElement.style.maxHeight = "200px";
+    debugElement.style.overflow = "auto";
+    debugElement.innerHTML = "<h3>デバッグ情報</h3>";
+    recipeContentElement.appendChild(debugElement);
+  }
 
   try {
     // Googleスプレッドシートからデータを読み込む
     await loadRecipesFromSpreadsheet();
 
     // 読み込み結果を表示
-    debugElement.innerHTML += `<p>読み込み完了: 合計${recipes.length}件のレシピを読み込みました</p>`;
+    debugLog(`読み込み完了: 合計${recipes.length}件のレシピを読み込みました`);
 
     if (recipes.length > 0) {
       // ローディングステータスを削除
@@ -181,7 +196,7 @@ function generateCategoryMenu() {
     }
     if (
       !categories[recipe.category][recipe.subcategory][
-        recipe.subsubcategory
+      recipe.subsubcategory
       ]
     ) {
       categories[recipe.category][recipe.subcategory][
@@ -318,9 +333,8 @@ function showSubsubcategory(
 
   categories[categoryId][subcategoryId][subsubcategoryId].forEach(
     (recipe) => {
-      html += `<h4><a href="#recipe-${encodeURIComponent(recipe.id)}">${
-        recipe.id
-      }</a></h4>`;
+      html += `<h4><a href="#recipe-${encodeURIComponent(recipe.id)}">${recipe.id
+        }</a></h4>`;
     }
   );
 
@@ -351,8 +365,7 @@ function showRecipe(recipe) {
 
   displayedRecipes.forEach((displayedRecipe, index) => {
     html += `
-      <div class="recipe-item" ${
-        index > 0 ? 'style="margin-top: 40px;"' : ""
+      <div class="recipe-item" ${index > 0 ? 'style="margin-top: 40px;"' : ""
       }>
         <h1 id="${displayedRecipe.id}">${displayedRecipe.id}</h1>
         <p>★材料</p>
