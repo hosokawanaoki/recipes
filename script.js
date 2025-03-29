@@ -68,8 +68,8 @@ function loadRecipesFromSpreadsheet() {
           const cols = table.cols.map((col) => col.label);
           const rows = table.rows;
 
-          // レシピデータに変換
-          recipes = rows.map((row) => {
+          // レシピデータに変換 (1行目はヘッダのためスキップ)
+          recipes = rows.slice(1).map((row) => {
             const values = row.c.map((cell) =>
               cell ? cell.v || "" : ""
             );
