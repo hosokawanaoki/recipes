@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>料理メモ</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 0;
+      }
+
+      header {
+        background-color: #4caf50;
+        color: white;
+        text-align: center;
+        padding: 1em 0;
+      }
+
+      nav {
+        display: flex;
+        justify-content: space-around;
+        background-color: #333;
+      }
+
+      nav a {
+        color: white;
+        padding: 14px 20px;
+        text-decoration: none;
+        text-align: center;
+      }
+
+      nav a:hover {
+        background-color: #ddd;
+        color: black;
+      }
+
+      main {
+        padding: 20px;
+      }
+
+      footer {
+        background-color: #333;
+        color: white;
+        text-align: center;
+        padding: 1em 0;
+        position: fixed;
+        width: 100%;
+        bottom: 0;
+      }
+
+      @media (max-width: 768px) {
+        nav {
+          flex-direction: column;
+        }
+      }
+
+      .search-container {
+        margin-bottom: 20px;
+      }
+
+      #searchInput {
+        padding: 8px;
+        width: 70%;
+        max-width: 300px;
+      }
+
+      #result {
+        margin-top: 10px;
+        margin-bottom: 20px;
+      }
+
+      #result a {
+        display: block;
+        margin-bottom: 5px;
+        color: #4caf50;
+        text-decoration: none;
+      }
+
+      #result a:hover {
+        text-decoration: underline;
+      }
+
+      pre {
+        background-color: #f5f5f5;
+        padding: 10px;
+        border-radius: 5px;
+        white-space: pre-wrap;
+      }
+
+      hr {
+        border: 0;
+        height: 1px;
+        background-color: #ddd;
+        margin: 20px 0;
+      }
+
+      h1,
+      h2,
+      h3,
+      h4 {
+        color: #333;
+      }
+
+      .recipe-content {
+        margin-top: 30px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <header>
+      <h1>料理メモ</h1>
+    </header>
+    <nav>
+      <a href="#home">料理</a>
+      <a href="#categories">集計</a>
+    </nav>
+    <main>
+      <div class="search-container">
+        <form id="searchForm">
+          <input
+            type="search"
+            id="searchInput"
+            placeholder="キーワードを入力"
+          />
+          <input type="button" onclick="searchRecipes()" value="検索" />
+        </form>
+      </div>
+      <div class="result" id="result"></div>
+
+      <!-- レシピコンテンツを表示するエリア -->
+      <div id="recipeContent" class="recipe-content"></div>
+
+      <!-- カテゴリメニューを動的に生成 -->
+      <div id="categories">
+        <ul id="categoryMenu"></ul>
+      </div>
+
+      <script>
+        // レシピデータを変数に格納
+        let recipes = [];
+        let categories = {};
+
+        // Googleスプレッドシートからデータを読み込む関数
+        function loadRecipesFromSpreadsheet() {
+          return new Promise((resolve, reject) => {
+            // デバッグ情報を表示エリアに追加
+            const debugElement = document.getElementById("debugInfo");
+            if (debugElement) {
+              debugElement.innerHTML += `<p>Googleスプレッドシートからデータを読み込み中...</p>`;
+            }
+
+            // ローディングステータスを更新
+            const loadingElement = document.getElementById("loadingStatus");
+            if (loadingElement) {
+              loadingElement.textContent = `レシピデータを読み込み中...`;
+            }
+
+            // スプレッドシートのID
+            const spreadsheetId = "10E1tLkOrJvdyhMqo4uoqnDcODbPAcxCS";
+
+            // スプレッドシートのデータを取得するURL
+            // gid=1142479739はシートのID
+            const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&gid=1142479739`;
+
+            fetch(url, {
+              mode: "cors",
+              headers: {
+                Origin: window.location.origin,
+              },
+            })
+              .then((response) => {
+                if (!response.ok) {
+                  throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.text();
+              })
+              .then((text) => {
+                // Google Sheetsの応答は純粋なJSONではなく、JavaScriptのコールバック形式になっているため、
+                // 正規表現を使用して実際のJSONデータを抽出する
+                const jsonData = text.match(
+                  /google\.visualization\.Query\.setResponse\((.*)\);/
+                );
+                if (jsonData && jsonData[1]) {
+                  const data = JSON.parse(jsonData[1]);
+
+                  // スプレッドシートのデータを解析
+                  const table = data.table;
+                  const cols = table.cols.map((col) => col.label);
+                  const rows = table.rows;
+
+                  // レシピデータに変換
+                  recipes = rows.map((row) => {
+                    const values = row.c.map((cell) =>
+                      cell ? cell.v || "" : ""
+                    );
+
+                    // スプレッドシートの列の順序に基づいてデータをマッピング
+                    // 列の順序: レシピ名, カテゴリー, サブカテゴリー, サブサブカテゴリー, 材料, 手順, 参照URL, 評価
+                    return {
+                      id: values[0] || "",
+                      category: values[1] || "",
+                      subcategory: values[2] || "",
+                      subsubcategory: values[3] || "",
+                      materials: values[4] ? values[4].split("\n") : [],
+                      steps: values[5] ? values[5].split("\n") : [],
+                      reference: values[6] || "",
+                      rating: values[7] || "",
+                    };
+                  });
+
+                  if (debugElement) {
+                    debugElement.innerHTML += `<p>読み込み成功: ${recipes.length}件のレシピを読み込みました</p>`;
+                  }
+
+                  resolve(recipes);
+                } else {
+                  throw new Error(
+                    "スプレッドシートのデータを解析できませんでした"
+                  );
+                }
+              })
+              .catch((error) => {
+                console.error("Error loading spreadsheet data:", error);
+                if (debugElement) {
+                  debugElement.innerHTML += `<p>エラー: ${error.message}</p>`;
+                }
+                reject(error);
+              });
+          });
+        }
+
+        // ページ読み込み時にデータを処理
+        window.onload = async function () {
+          // レシピコンテンツエリアを取得
+          const recipeContentElement = document.getElementById("recipeContent");
+          if (!recipeContentElement) {
+            console.error("recipeContent element not found");
+            return;
+          }
+
+          // ローディングステータスを表示
+          const loadingElement = document.createElement("div");
+          loadingElement.id = "loadingStatus";
+          loadingElement.style.textAlign = "center";
+          loadingElement.style.padding = "20px";
+          loadingElement.style.fontWeight = "bold";
+          loadingElement.textContent = "レシピデータを読み込み中...";
+          recipeContentElement.appendChild(loadingElement);
+
+          // デバッグ情報表示エリアを作成
+          const debugElement = document.createElement("div");
+          debugElement.id = "debugInfo";
+          debugElement.style.border = "1px solid #ccc";
+          debugElement.style.padding = "10px";
+          debugElement.style.margin = "10px 0";
+          debugElement.style.backgroundColor = "#f9f9f9";
+          debugElement.style.maxHeight = "200px";
+          debugElement.style.overflow = "auto";
+          debugElement.innerHTML = "<h3>デバッグ情報</h3>";
+          recipeContentElement.appendChild(debugElement);
+
+          try {
+            // Googleスプレッドシートからデータを読み込む
+            await loadRecipesFromSpreadsheet();
+
+            // 読み込み結果を表示
+            debugElement.innerHTML += `<p>読み込み完了: 合計${recipes.length}件のレシピを読み込みました</p>`;
+
+            if (recipes.length > 0) {
+              // ローディングステータスを削除
+              const loadingStatusElement =
+                document.getElementById("loadingStatus");
+              if (loadingStatusElement) {
+                loadingStatusElement.remove();
+              }
+
+              // カテゴリメニューを生成
+              generateCategoryMenu();
+
+              // URLハッシュがあれば対応するレシピを表示
+              if (window.location.hash) {
+                showRecipeFromHash();
+              }
+            } else {
+              // レシピが読み込まれなかった場合
+              const loadingStatusElement =
+                document.getElementById("loadingStatus");
+              if (loadingStatusElement) {
+                loadingStatusElement.textContent =
+                  "レシピデータの読み込みに失敗しました。";
+                loadingStatusElement.style.color = "red";
+              }
+            }
+          } catch (error) {
+            console.error("Error loading recipe data:", error);
+            debugElement.innerHTML += `<p>エラー: ${error.message}</p>`;
+
+            const loadingStatusElement =
+              document.getElementById("loadingStatus");
+            if (loadingStatusElement) {
+              loadingStatusElement.textContent = "エラーが発生しました。";
+              loadingStatusElement.style.color = "red";
+            }
+          }
+        };
+
+        // カテゴリメニューを生成する関数
+        function generateCategoryMenu() {
+          // カテゴリ、サブカテゴリの階層構造を作成
+          categories = {};
+          recipes.forEach((recipe) => {
+            if (!categories[recipe.category]) {
+              categories[recipe.category] = {};
+            }
+            if (!categories[recipe.category][recipe.subcategory]) {
+              categories[recipe.category][recipe.subcategory] = {};
+            }
+            if (
+              !categories[recipe.category][recipe.subcategory][
+                recipe.subsubcategory
+              ]
+            ) {
+              categories[recipe.category][recipe.subcategory][
+                recipe.subsubcategory
+              ] = [];
+            }
+            categories[recipe.category][recipe.subcategory][
+              recipe.subsubcategory
+            ].push(recipe);
+          });
+
+          // HTMLを生成
+          const menuElement = document.getElementById("categoryMenu");
+          let menuHTML = "";
+
+          for (const category in categories) {
+            const categoryId = encodeURIComponent(category);
+            menuHTML += `<li><a href="#category-${categoryId}">${category}</a><ul>`;
+
+            for (const subcategory in categories[category]) {
+              const subcategoryId = encodeURIComponent(subcategory);
+              menuHTML += `<li><a href="#subcategory-${categoryId}-${subcategoryId}">${subcategory}</a><ul>`;
+
+              for (const subsubcategory in categories[category][subcategory]) {
+                const subsubcategoryId = encodeURIComponent(subsubcategory);
+                menuHTML += `<li><a href="#subsubcategory-${categoryId}-${subcategoryId}-${subsubcategoryId}">${subsubcategory}</a><ul>`;
+
+                categories[category][subcategory][subsubcategory].forEach(
+                  (recipe) => {
+                    const recipeId = encodeURIComponent(recipe.id);
+                    menuHTML += `<li><a href="#recipe-${recipeId}" onclick="showRecipe(recipes.find(r => r.id === '${recipe.id}'))">${recipe.id}</a></li>`;
+                  }
+                );
+
+                menuHTML += `</ul></li>`;
+              }
+
+              menuHTML += `</ul></li>`;
+            }
+
+            menuHTML += `</ul></li>`;
+          }
+
+          menuElement.innerHTML = menuHTML;
+
+          // ハッシュが変更されたときにレシピを表示
+          window.addEventListener("hashchange", showRecipeFromHash);
+        }
+
+        // ハッシュからレシピまたはカテゴリを表示する関数
+        function showRecipeFromHash() {
+          const hash = window.location.hash.substring(1);
+
+          if (hash.startsWith("recipe-")) {
+            const recipeId = decodeURIComponent(hash.substring(7));
+            const recipe = recipes.find((r) => r.id === recipeId);
+
+            if (recipe) {
+              showRecipe(recipe);
+            }
+          } else if (hash.startsWith("category-")) {
+            const categoryId = decodeURIComponent(hash.substring(9));
+            showCategory(categoryId);
+          } else if (hash.startsWith("subcategory-")) {
+            const parts = hash.substring(12).split("-");
+            const categoryId = decodeURIComponent(parts[0]);
+            const subcategoryId = decodeURIComponent(parts[1]);
+            showSubcategory(categoryId, subcategoryId);
+          } else if (hash.startsWith("subsubcategory-")) {
+            const parts = hash.substring(15).split("-");
+            const categoryId = decodeURIComponent(parts[0]);
+            const subcategoryId = decodeURIComponent(parts[1]);
+            const subsubcategoryId = decodeURIComponent(parts[2]);
+            showSubsubcategory(categoryId, subcategoryId, subsubcategoryId);
+          }
+        }
+
+        // カテゴリを表示する関数
+        function showCategory(categoryId) {
+          const contentElement = document.getElementById("recipeContent");
+          let html = `<h1>${categoryId}</h1>`;
+
+          for (const subcategory in categories[categoryId]) {
+            html += `<h2>${subcategory}</h2>`;
+
+            for (const subsubcategory in categories[categoryId][subcategory]) {
+              html += `<h3>${subsubcategory}</h3>`;
+
+              categories[categoryId][subcategory][subsubcategory].forEach(
+                (recipe) => {
+                  html += `<h4><a href="#recipe-${encodeURIComponent(
+                    recipe.id
+                  )}">${recipe.id}</a></h4>`;
+                }
+              );
+            }
+          }
+
+          contentElement.innerHTML = html;
+        }
+
+        // サブカテゴリを表示する関数
+        function showSubcategory(categoryId, subcategoryId) {
+          const contentElement = document.getElementById("recipeContent");
+          let html = `<h1>${categoryId}</h1><h2>${subcategoryId}</h2>`;
+
+          for (const subsubcategory in categories[categoryId][subcategoryId]) {
+            html += `<h3>${subsubcategory}</h3>`;
+
+            categories[categoryId][subcategoryId][subsubcategory].forEach(
+              (recipe) => {
+                html += `<h4><a href="#recipe-${encodeURIComponent(
+                  recipe.id
+                )}">${recipe.id}</a></h4>`;
+              }
+            );
+          }
+
+          contentElement.innerHTML = html;
+        }
+
+        // サブサブカテゴリを表示する関数
+        function showSubsubcategory(
+          categoryId,
+          subcategoryId,
+          subsubcategoryId
+        ) {
+          const contentElement = document.getElementById("recipeContent");
+          let html = `<h1>${categoryId}</h1><h2>${subcategoryId}</h2><h3>${subsubcategoryId}</h3>`;
+
+          categories[categoryId][subcategoryId][subsubcategoryId].forEach(
+            (recipe) => {
+              html += `<h4><a href="#recipe-${encodeURIComponent(recipe.id)}">${
+                recipe.id
+              }</a></h4>`;
+            }
+          );
+
+          contentElement.innerHTML = html;
+        }
+
+        // レシピを表示する関数
+        function showRecipe(recipe) {
+          const contentElement = document.getElementById("recipeContent");
+          let html = `
+                    <h1 id="${recipe.id}">${recipe.id}</h1>
+                    <p>★材料</p>
+                    <pre><code>${recipe.materials.join("\n")}</code></pre>
+                    <p>★手順</p>
+                    <pre><code>${recipe.steps.join("\n")}</code></pre>
+                `;
+
+          if (recipe.reference) {
+            html += `<p><a href="${recipe.reference}" target="_blank">${recipe.id}</a></p>`;
+          }
+
+          html += `<p>★評価\n　${recipe.rating}</p><hr>`;
+
+          contentElement.innerHTML = html;
+        }
+
+        // 検索機能
+        function searchRecipes() {
+          const query = document
+            .getElementById("searchInput")
+            .value.toLowerCase();
+          if (!query) {
+            document.getElementById("result").innerHTML = "";
+            return;
+          }
+
+          let resultHTML = "";
+
+          recipes.forEach((recipe) => {
+            // レシピ名、材料、手順のいずれかに検索キーワードが含まれているか確認
+            if (
+              recipe.id.toLowerCase().includes(query) ||
+              recipe.materials.some((m) => m.toLowerCase().includes(query)) ||
+              recipe.steps.some((s) => s.toLowerCase().includes(query))
+            ) {
+              resultHTML += `<a href="#recipe-${encodeURIComponent(
+                recipe.id
+              )}">${recipe.id}</a>`;
+            }
+          });
+
+          document.getElementById("result").innerHTML =
+            resultHTML || "<p>該当する結果がありません。</p>";
+        }
+      </script>
+    </main>
+    <footer>
+      <p>料理メモ - Googleスプレッドシート版</p>
+    </footer>
+  </body>
+</html>
